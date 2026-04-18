@@ -3,148 +3,193 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Poké-Ruleta Pro</title>
+    <title>Poké-Ruleta Multi-QR</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- Plugin para dibujar etiquetas dentro de los sectores -->
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
     <style>
-        .chart-container { position: relative; width: 100%; max-width: 400px; margin: 0 auto; height: 400px; }
+        .chart-container { position: relative; width: 100%; max-width: 380px; margin: 0 auto; height: 380px; }
         .pointer { 
             width: 0; height: 0; 
-            border-left: 20px solid transparent; 
-            border-right: 20px solid transparent; 
-            border-top: 40px solid #1c1917; 
+            border-left: 18px solid transparent; 
+            border-right: 18px solid transparent; 
+            border-top: 35px solid #1c1917; 
             position: absolute; top: -10px; left: 50%; 
             transform: translateX(-50%); z-index: 50;
-            filter: drop-shadow(0px 4px 3px rgba(0,0,0,0.4));
         }
         .wheel-wrapper { transition: transform 4s cubic-bezier(0.15, 0, 0.15, 1); width: 100%; height: 100%; }
-        #rouletteCanvas { cursor: pointer; }
-        .hidden-mode { display: none !important; }
+        @media print {
+            .no-print { display: none !important; }
+            .print-card { break-inside: avoid; page-break-inside: avoid; border: 1px solid #e5e7eb; margin-bottom: 2rem; padding: 1rem; border-radius: 1rem; display: flex; flex-direction: column; align-items: center; }
+            body { background: white; padding: 0; }
+        }
     </style>
 </head>
-<body class="bg-stone-100 text-stone-900 font-sans min-h-screen flex flex-col items-center p-4">
+<body class="bg-slate-50 text-slate-900 font-sans min-h-screen">
 
-    <!-- Chosen Palette: Stone neutrals with vibrant Pokemon-inspired accents (Red, Blue, Green) -->
-    <!-- Application Structure Plan: The app uses a URL-based state detection. If 'p1' exists in the URL, it assumes "Play Mode" and hides the configuration panel. If not, it shows "Edit Mode". This ensures the friend in Madrid only sees the game, while the user can still edit if they go to the base URL. -->
-    <!-- Visualization & Content Choices: Chart.js with the Datalabels plugin is used to ensure names are visible ON the wheel. The rotation logic accounts for the 4s CSS transition. QR code is generated using QRious. NO SVG used. -->
+    <!-- Chosen Palette: Slate and White for a clean "Management" interface, keeping the Red/Blue/Green for the actual wheels. -->
+    <!-- Application Structure Plan: A dual-mode SPA. Mode 1 (Creator): Dashboard to manage a list of up to 10 roulettes, generate individual QRs, and a print view. Mode 2 (Player): Triggered by URL params, shows ONLY the specific wheel. This allows the user to prepare 10 different games from a single URL. -->
+    <!-- Visualization: Chart.js for wheels, QRious for QR generation. State is derived from URL. -->
     <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
 
-    <div class="max-w-4xl w-full flex flex-col items-center">
+    <div class="max-w-6xl mx-auto p-4 md:p-8">
         
-        <!-- SECCIÓN DE CABECERA -->
-        <header class="text-center my-8">
-            <h1 class="text-4xl font-black tracking-tighter text-stone-900">POKÉ-RULETA</h1>
-            <p id="modeDescription" class="text-stone-500 mt-2 italic">Cargando modo...</p>
-        </header>
-
-        <div class="w-full grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-            
-            <!-- PANEL DE CONFIGURACIÓN (Oculto si se accede por QR) -->
-            <aside id="configPanel" class="lg:col-span-5 bg-white p-6 rounded-3xl shadow-xl border border-stone-200">
-                <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
-                    Configurar Ruleta
-                </h2>
-                <div class="space-y-4">
-                    <div>
-                        <label class="block text-xs font-bold uppercase text-stone-400 mb-1">Opción 1</label>
-                        <input type="text" id="p1Input" placeholder="Pikachu" class="w-full bg-stone-50 border-2 border-stone-100 p-3 rounded-xl focus:border-stone-800 outline-none transition-all">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold uppercase text-stone-400 mb-1">Opción 2</label>
-                        <input type="text" id="p2Input" placeholder="Charmander" class="w-full bg-stone-50 border-2 border-stone-100 p-3 rounded-xl focus:border-stone-800 outline-none transition-all">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold uppercase text-stone-400 mb-1">Opción 3</label>
-                        <input type="text" id="p3Input" placeholder="Squirtle" class="w-full bg-stone-50 border-2 border-stone-100 p-3 rounded-xl focus:border-stone-800 outline-none transition-all">
-                    </div>
-                    
-                    <button id="btnSave" class="w-full bg-stone-900 text-white font-bold py-4 rounded-xl hover:bg-black transition-all shadow-lg active:scale-95">
-                        GENERAR CÓDIGO QR
-                    </button>
-                </div>
-
-                <div id="qrSection" class="mt-8 pt-8 border-t border-stone-100 flex flex-col items-center hidden">
-                    <p class="text-sm font-medium text-stone-400 mb-4 uppercase tracking-widest">Escanea para jugar</p>
-                    <div class="bg-white p-4 rounded-2xl shadow-inner border border-stone-100">
-                        <canvas id="qrCanvas"></canvas>
-                    </div>
-                    <p class="text-[10px] text-stone-400 mt-4 text-center break-all max-w-[200px]" id="currentLinkText"></p>
-                </div>
-            </aside>
-
-            <!-- ÁREA DE JUEGO (Siempre visible) -->
-            <section id="gameArea" class="lg:col-span-7 flex flex-col items-center bg-white p-8 rounded-[3rem] shadow-2xl border-4 border-white">
-                
+        <!-- MODO JUGADOR (Se activa por URL) -->
+        <div id="playerView" class="hidden flex flex-col items-center justify-center min-h-[80vh]">
+            <h1 id="playerTitle" class="text-3xl font-black mb-10 tracking-tighter">POKÉ-RULETA JUEGO</h1>
+            <div class="bg-white p-8 rounded-[3rem] shadow-2xl border-4 border-white w-full max-w-xl flex flex-col items-center">
                 <div class="chart-container">
                     <div class="pointer"></div>
                     <div id="wheelContainer" class="wheel-wrapper">
                         <canvas id="rouletteCanvas"></canvas>
                     </div>
                 </div>
-
-                <div class="mt-10 text-center">
-                    <div id="resultBox" class="mb-6 h-16 flex items-center justify-center">
-                        <p id="resultText" class="text-2xl font-black text-stone-900 opacity-0 transition-opacity"></p>
+                <div class="mt-8 text-center">
+                    <div class="h-16 flex items-center justify-center mb-4">
+                        <p id="resultText" class="text-2xl font-black opacity-0 transition-opacity"></p>
                     </div>
-                    
                     <button id="btnSpin" class="bg-red-500 hover:bg-red-600 text-white text-2xl font-black px-12 py-5 rounded-2xl shadow-[0_8px_0_rgb(185,28,28)] active:shadow-none active:translate-y-2 transition-all">
-                        ¡SPIN!
+                        ¡GIRAR!
                     </button>
                 </div>
-            </section>
+            </div>
         </div>
 
-        <footer class="mt-12 text-stone-400 text-xs text-center pb-8">
-            Si deseas editar la ruleta, borra los parámetros de la URL.
-        </footer>
+        <!-- MODO CREADOR (Configuración múltiple) -->
+        <div id="creatorView" class="no-print">
+            <header class="mb-10 text-center">
+                <h1 class="text-4xl font-black text-slate-800">Panel de Gestión de Ruletas</h1>
+                <p class="text-slate-500 mt-2">Crea hasta 10 ruletas diferentes y genera sus códigos QR para imprimir.</p>
+            </header>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                <!-- Formulario -->
+                <div class="lg:col-span-4 space-y-6">
+                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                        <h2 class="text-lg font-bold mb-4 italic">Nueva Ruleta</h2>
+                        <div class="space-y-3">
+                            <input type="text" id="p1" placeholder="Pokémon 1" class="w-full p-3 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-slate-400">
+                            <input type="text" id="p2" placeholder="Pokémon 2" class="w-full p-3 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-slate-400">
+                            <input type="text" id="p3" placeholder="Pokémon 3" class="w-full p-3 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-slate-400">
+                            <button id="btnAdd" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-all">
+                                Añadir a la lista
+                            </button>
+                        </div>
+                    </div>
+                    <button onclick="window.print()" class="w-full bg-slate-800 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2">
+                        Imprimir todas las tarjetas QR
+                    </button>
+                </div>
+
+                <!-- Lista de Ruletas -->
+                <div class="lg:col-span-8">
+                    <div id="rouletteList" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <!-- Las tarjetas se generan aquí -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ZONA DE IMPRESIÓN (Visible solo al imprimir) -->
+        <div id="printZone" class="hidden print:block">
+            <h1 class="text-2xl font-bold mb-8 text-center border-b pb-4">Colección de Códigos QR - Poké-Ruleta</h1>
+            <div id="printGrid" class="grid grid-cols-2 gap-8"></div>
+        </div>
+
     </div>
 
     <script>
-        // Registrar el plugin de etiquetas
         Chart.register(ChartDataLabels);
-
+        
+        let roulettes = [];
         let myChart = null;
-        let isSpinning = false;
         let currentRotation = 0;
-
-        const p1Input = document.getElementById('p1Input');
-        const p2Input = document.getElementById('p2Input');
-        const p3Input = document.getElementById('p3Input');
-        const btnSave = document.getElementById('btnSave');
-        const btnSpin = document.getElementById('btnSpin');
-        const configPanel = document.getElementById('configPanel');
-        const modeDescription = document.getElementById('modeDescription');
-        const resultText = document.getElementById('resultText');
-        const wheelContainer = document.getElementById('wheelContainer');
+        let isSpinning = false;
 
         function init() {
             const params = new URLSearchParams(window.location.search);
-            const p1 = params.get('p1');
-            const p2 = params.get('p2');
-            const p3 = params.get('p3');
-
-            if (p1 && p2 && p3) {
-                // MODO JUGADOR: Bloquear edición
-                configPanel.classList.add('hidden-mode');
-                document.getElementById('gameArea').parentElement.classList.remove('lg:grid-cols-12');
-                document.getElementById('gameArea').parentElement.classList.add('flex', 'justify-center');
-                document.getElementById('gameArea').classList.replace('lg:col-span-7', 'max-w-xl');
-                modeDescription.textContent = "Modo Visualización - Madrid";
-                updateWheel(p1, p2, p3);
+            if (params.has('p1')) {
+                document.getElementById('creatorView').style.display = 'none';
+                document.getElementById('playerView').style.display = 'flex';
+                initPlayer(params.get('p1'), params.get('p2'), params.get('p3'));
             } else {
-                // MODO CREADOR
-                modeDescription.textContent = "Modo Editor - Crea tu reto";
-                updateWheel("Opción 1", "Opción 2", "Opción 3");
+                renderList();
             }
         }
 
-        function updateWheel(n1, n2, n3) {
-            const ctx = document.getElementById('rouletteCanvas').getContext('2d');
-            if (myChart) myChart.destroy();
+        // --- LÓGICA DEL CREADOR ---
 
+        document.getElementById('btnAdd').addEventListener('click', () => {
+            const p1 = document.getElementById('p1').value || "P1";
+            const p2 = document.getElementById('p2').value || "P2";
+            const p3 = document.getElementById('p3').value || "P3";
+            
+            if(roulettes.length >= 10) {
+                alert("Máximo 10 ruletas");
+                return;
+            }
+
+            const url = new URL(window.location.href.split('?')[0]);
+            url.searchParams.set('p1', p1);
+            url.searchParams.set('p2', p2);
+            url.searchParams.set('p3', p3);
+
+            roulettes.push({ p1, p2, p3, url: url.toString() });
+            renderList();
+            
+            // Limpiar inputs
+            document.getElementById('p1').value = "";
+            document.getElementById('p2').value = "";
+            document.getElementById('p3').value = "";
+        });
+
+        function renderList() {
+            const list = document.getElementById('rouletteList');
+            const printGrid = document.getElementById('printGrid');
+            list.innerHTML = "";
+            printGrid.innerHTML = "";
+
+            roulettes.forEach((r, index) => {
+                // Tarjeta en pantalla
+                const card = document.createElement('div');
+                card.className = "bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col items-center";
+                card.innerHTML = `
+                    <p class="font-bold text-sm mb-2">Ruleta #${index + 1}</p>
+                    <p class="text-xs text-slate-400 mb-4">${r.p1}, ${r.p2}, ${r.p3}</p>
+                    <canvas id="qr-${index}"></canvas>
+                    <button onclick="removeRoulette(${index})" class="mt-4 text-red-500 text-xs font-bold uppercase tracking-tighter">Eliminar</button>
+                `;
+                list.appendChild(card);
+
+                // Tarjeta de impresión
+                const pCard = document.createElement('div');
+                pCard.className = "print-card";
+                pCard.innerHTML = `
+                    <h2 style="font-size: 1.5rem; font-weight: bold; margin-bottom: 0.5rem;">Ruleta #${index + 1}</h2>
+                    <p style="margin-bottom: 1rem;">Opciones: ${r.p1} | ${r.p2} | ${r.p3}</p>
+                    <canvas id="qr-print-${index}"></canvas>
+                    <p style="font-size: 0.7rem; margin-top: 1rem; color: #666;">Escanea para jugar</p>
+                `;
+                printGrid.appendChild(pCard);
+
+                // Generar QRs
+                setTimeout(() => {
+                    new QRious({ element: document.getElementById(`qr-${index}`), value: r.url, size: 120 });
+                    new QRious({ element: document.getElementById(`qr-print-${index}`), value: r.url, size: 200 });
+                }, 10);
+            });
+        }
+
+        function removeRoulette(idx) {
+            roulettes.splice(idx, 1);
+            renderList();
+        }
+
+        // --- LÓGICA DEL JUGADOR ---
+
+        function initPlayer(n1, n2, n3) {
+            const ctx = document.getElementById('rouletteCanvas').getContext('2d');
             myChart = new Chart(ctx, {
                 type: 'pie',
                 data: {
@@ -159,87 +204,42 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    rotation: 0,
                     plugins: {
                         legend: { display: false },
-                        tooltip: { enabled: false },
                         datalabels: {
-                            color: '#ffffff',
-                            font: { weight: 'bold', size: 20 },
-                            formatter: (value, context) => context.chart.data.labels[context.dataIndex],
-                            anchor: 'center',
-                            align: 'center'
+                            color: '#fff',
+                            font: { size: 22, weight: 'bold' },
+                            formatter: (v, ctx) => ctx.chart.data.labels[ctx.dataIndex]
                         }
                     }
                 }
             });
-        }
 
-        function generateQR() {
-            const v1 = p1Input.value || "Opción 1";
-            const v2 = p2Input.value || "Opción 2";
-            const v3 = p3Input.value || "Opción 3";
-
-            const url = new URL(window.location.href.split('?')[0]);
-            url.searchParams.set('p1', v1);
-            url.searchParams.set('p2', v2);
-            url.searchParams.set('p3', v3);
-
-            const finalUrl = url.toString();
-            
-            // Actualizar QR
-            document.getElementById('qrSection').classList.remove('hidden');
-            new QRious({
-                element: document.getElementById('qrCanvas'),
-                value: finalUrl,
-                size: 200,
-                level: 'H'
-            });
-            document.getElementById('currentLinkText').textContent = finalUrl;
-            
-            // Actualizar vista previa de la ruleta
-            updateWheel(v1, v2, v3);
-            window.history.pushState({}, '', finalUrl);
+            document.getElementById('btnSpin').addEventListener('click', spin);
         }
 
         function spin() {
             if (isSpinning) return;
             isSpinning = true;
-            resultText.style.opacity = "0";
+            document.getElementById('resultText').style.opacity = "0";
 
-            const spins = 5 + Math.floor(Math.random() * 5); // Entre 5 y 10 vueltas completas
-            const extraDegrees = Math.floor(Math.random() * 360);
-            const totalDegrees = spins * 360 + extraDegrees;
-            
-            currentRotation += totalDegrees;
-            wheelContainer.style.transform = `rotate(${currentRotation}deg)`;
+            const extra = 3600 + Math.floor(Math.random() * 360);
+            currentRotation += extra;
+            document.getElementById('wheelContainer').style.transform = `rotate(${currentRotation}deg)`;
 
             setTimeout(() => {
                 isSpinning = false;
-                
-                // Cálculo del ganador basado en la rotación final
-                // El puntero está arriba (0 grados). 
-                // Cada sección mide 120 grados.
-                const actualRotation = currentRotation % 360;
-                const relativeDegree = (360 - actualRotation) % 360;
-                
-                let winnerIdx = 0;
-                if (relativeDegree < 120) winnerIdx = 0;
-                else if (relativeDegree < 240) winnerIdx = 1;
-                else winnerIdx = 2;
+                const normalized = (360 - (currentRotation % 360)) % 360;
+                let winIdx = 0;
+                if (normalized < 120) winIdx = 0;
+                else if (normalized < 240) winIdx = 1;
+                else winIdx = 2;
 
-                const winner = myChart.data.labels[winnerIdx];
-                resultText.textContent = `¡HA SALIDO: ${winner.toUpperCase()}!`;
-                resultText.style.opacity = "1";
-                
-                // Pequeña animación de éxito
-                resultText.classList.add('animate-bounce');
-                setTimeout(() => resultText.classList.remove('animate-bounce'), 1000);
+                const res = document.getElementById('resultText');
+                res.textContent = `¡HAS SACADO A ${myChart.data.labels[winIdx].toUpperCase()}!`;
+                res.style.opacity = "1";
             }, 4000);
         }
-
-        btnSave.addEventListener('click', generateQR);
-        btnSpin.addEventListener('click', spin);
 
         init();
     </script>
